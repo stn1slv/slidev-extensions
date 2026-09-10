@@ -23,15 +23,14 @@
     "README.md",
     "UPSTREAM",
     "bin",
-    "dist"
+    "src"
   ],
   "engines": {
     "node": ">=22.18"
   },
   "scripts": {
     "build": "node scripts/build.mjs",
-    "prepare": "node scripts/build.mjs",
-    "test": "vitest run",
+    "test": "node scripts/build.mjs && vitest run",
     "lint": "tsc --noEmit && eslint ."
   },
   "peerDependencies": {

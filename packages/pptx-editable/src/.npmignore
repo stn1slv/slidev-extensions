@@ -1,0 +1,2 @@
+# Applies in both tarballs: npm honours an ignore file in a subdirectory even when `files` is set.
+*.test.ts

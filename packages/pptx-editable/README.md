@@ -25,7 +25,7 @@ A tag such as `pptx-editable-v0.1.0` pins a version: `npm i -g https://github.co
 
 The tool resolves `@slidev/cli`, the theme and Playwright from the deck, not from its own folder, so the deck decides which Slidev version renders. If the deck has the full `playwright` package instead of `playwright-chromium`, that is used. Requires Node 22.18 or newer. CI installs the packed tarball into a fresh deck and runs an export on Ubuntu, macOS and Windows with Node 22 and 24.
 
-From a checkout, run `make setup` in `packages/pptx-editable` once (it installs and builds `dist/`), then add the folder as a `file:` dependency of the deck.
+From a checkout, run `make setup` in `packages/pptx-editable` once, then add the folder as a `file:` dependency of the deck.
 
 ## Use
 
@@ -68,7 +68,7 @@ make lint    # tsc and eslint
 
 `scripts/sync.sh` refuses to run on a dirty fork, makes two mechanical edits to the copy (relative imports gain a `.ts` extension, and one test's path to the shipped walker is shortened by one directory), and fails if any relative import is left without an extension.
 
-`make build` writes `dist/` from `src/` with Node's own type stripping (`module.stripTypeScriptTypes`), not a transpiler, so what ships is what Node would run from the sources. Node refuses to strip types under `node_modules`, which is why an installed copy needs `dist/`. The build also writes `dist/pptx-walker.mjs` so the vendored walker test checks the function that is actually sent to the browser, and it fails if a literal in the sources holds two consecutive spaces, since the emitted code collapses the runs that stripping leaves behind.
+Nothing is compiled for use. `bin/cli.mjs` registers `bin/ts-loader.mjs`, a module hook that strips types in memory with Node's own `module.stripTypeScriptTypes`, so the sources run as they are from any location, including under `node_modules`, where Node itself refuses to strip types. `make build` writes the same stripped output to `dist/` for the tests only: the vendored walker test reads `dist/pptx-walker.mjs` to check the function that is actually sent to the browser, and the build fails if a literal in the walker holds two consecutive spaces, since that copy collapses the runs stripping leaves behind, or if any relative import would not resolve.
 
 ## License
 

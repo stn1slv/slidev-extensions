@@ -12,7 +12,7 @@ This is a bridge, not a product. Once the upstream pull request ships as `slidev
 
 ## Installation
 
-One command on macOS, Windows or Linux with Node 22.18 or newer, no clone and no git needed. npm downloads GitHub's archive of `main`, installs it like any package, and builds `dist/` through the root `postinstall` script:
+One command on macOS, Windows or Linux with Node 22.18 or newer, no clone and no git needed. npm downloads GitHub's archive of `main` and installs it like any package; there is no build step and no install script (npm 11 blocks those by default), because the binary runs the TypeScript sources through a small loader hook:
 
 ```bash
 npm i -g https://github.com/stn1slv/slidev-extensions/archive/refs/heads/main.tar.gz
@@ -35,7 +35,7 @@ The tool resolves `@slidev/cli`, the theme and Playwright from the deck, not fro
 ```bash
 git clone https://github.com/stn1slv/slidev-extensions.git
 cd slidev-extensions/packages/pptx-editable
-npm install                      # also builds dist/
+npm install
 npx playwright install chromium  # once per machine
 ```
 
