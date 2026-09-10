@@ -1,15 +1,12 @@
-// Emit dist/ from src/ with Node's own type stripping.
+// Emit dist/ from src/ with Node's own type stripping, for the tests.
 //
-// Node runs the sources directly in development, but refuses to strip types
-// for anything under node_modules, so an installed copy must run JavaScript.
-// Using `stripTypeScriptTypes` rather than tsc keeps the output exactly what
-// Node would execute: `page.evaluate(collectSnapshot)` serializes the walker
-// function, and a transpiler is free to rewrite that body with helpers that
-// do not exist in the browser.
-//
-// dist/pptx-walker.mjs is a second copy of the walker for the vendored
-// `walker.test.ts`, which looks for `pptx-*.mjs` the way upstream's test
-// looks for its bundle.
+// Nothing ships or runs from dist/: the CLI loads the sources through
+// bin/ts-loader.mjs, which strips types in memory with the same
+// `stripTypeScriptTypes` call. This script writes that same output to disk
+// so the vendored `walker.test.ts` can inspect the walker as it reaches the
+// browser (it looks for `dist/pptx-*.mjs` the way upstream's test looks for
+// its bundle), and so the specifier check below can prove every relative
+// import resolves.
 import fs from 'node:fs'
 import { stripTypeScriptTypes } from 'node:module'
 import path from 'node:path'

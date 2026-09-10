@@ -1,5 +1,8 @@
 #!/usr/bin/env node
-// `dist` is written by `npm run build` (also on `prepare`). The sources are
-// TypeScript, and Node refuses to strip types for files under node_modules,
-// so an installed copy of this package has to run the built JavaScript.
-await import('../dist/cli.js')
+// The sources are TypeScript. Node runs them directly, and the hook makes
+// that work from inside node_modules too (see ts-loader.mjs), so an
+// installed copy needs neither a build step nor an install script.
+import { register } from 'node:module'
+
+register('./ts-loader.mjs', import.meta.url)
+await import('../src/cli.ts')

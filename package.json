@@ -19,14 +19,9 @@
     "packages/pptx-editable/UPSTREAM",
     "packages/pptx-editable/bin",
     "packages/pptx-editable/package.json",
-    "packages/pptx-editable/scripts/build.mjs",
     "packages/pptx-editable/src",
     "!packages/pptx-editable/src/**/*.test.ts"
   ],
-  "_comment": "postinstall rather than prepare, and the archive tarball rather than a git spec: npm runs a nested install for a prepare script, and npm 11 installs a global git dependency as a symlink into its temporary clone, which it then deletes. A tarball is copied like any package, and postinstall builds dist/ in place with nothing but Node.",
-  "scripts": {
-    "postinstall": "node packages/pptx-editable/scripts/build.mjs"
-  },
   "engines": {
     "node": ">=22.18"
   },
