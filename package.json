@@ -1,0 +1,34 @@
+{
+  "name": "slidev-extensions",
+  "type": "module",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Installable root for the slidev-extensions tools: npm i -g github:stn1slv/slidev-extensions",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/stn1slv/slidev-extensions"
+  },
+  "bin": {
+    "slidev-pptx-editable": "packages/pptx-editable/bin/cli.mjs"
+  },
+  "files": [
+    "LICENSE",
+    "packages/pptx-editable/LICENSE",
+    "packages/pptx-editable/README.md",
+    "packages/pptx-editable/UPSTREAM",
+    "packages/pptx-editable/bin",
+    "packages/pptx-editable/dist",
+    "packages/pptx-editable/package.json"
+  ],
+  "scripts": {
+    "prepare": "node packages/pptx-editable/scripts/build.mjs"
+  },
+  "engines": {
+    "node": ">=22.18"
+  },
+  "dependencies": {
+    "ansis": "^4.3.1",
+    "pptxgenjs": "^4.0.1"
+  }
+}

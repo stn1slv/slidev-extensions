@@ -37,15 +37,15 @@ mkdir -p "$DEST"
 while IFS= read -r -d '' f; do
   mkdir -p "$DEST/$(dirname "$f")"
   sed -E \
-    -e "s#(from |import\()'(\.\.?/[A-Za-z0-9_/-]+)'#\1'\2.ts'#g" \
-    -e "s#(from |import\()'(\.\.?/[^']+)\.js'#\1'\2.ts'#g" \
+    -e "s#(from |import\(|^import )'(\.\.?/[A-Za-z0-9_/-]+)'#\1'\2.ts'#g" \
+    -e "s#(from |import\(|^import )'(\.\.?/[^']+)\.js'#\1'\2.ts'#g" \
     -e "s#'\.\./\.\./\.\./dist'#'../../dist'#g" \
     "$SRC/$f" > "$DEST/$f"
 done < <(cd "$SRC" && find . -name '*.ts' -print0)
 
 # Node loads the copy without a bundler, so every relative specifier needs an
-# extension it understands.
-if grep -rnE "(from |import\()'\.\.?/[^']*'" "$DEST" | grep -vE "\.(ts|json)'"; then
+# extension it understands. Covers `from`, `import()` and side-effect imports.
+if grep -rnE "(from |import\(|^import )'\.\.?/[^']*'" "$DEST" | grep -vE "\.(ts|json)'"; then
   echo "sync: relative import(s) above lack a .ts or .json extension; extend the rewrite in $0" >&2
   exit 1
 fi

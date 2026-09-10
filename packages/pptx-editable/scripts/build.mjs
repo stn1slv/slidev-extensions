@@ -17,8 +17,9 @@ import { fileURLToPath } from 'node:url'
 
 const MULTI_SPACE_INSIDE = /\S {2,}\S/
 const ANNOTATION_GAP = /(\S) {2,}/g
-const TS_IMPORT = /((?:from\s+|import\()['"]\.[^'"]*)\.ts(['"])/g
-const RELATIVE_SPECIFIER = /(?:from\s+|import\()['"](\.[^'"]*)['"]/g
+// `from '…'`, `import('…')` and side-effect `import '…'` forms alike.
+const TS_IMPORT = /((?:from\s+|import\(|^\s*import\s+)['"]\.[^'"]*)\.ts(['"])/gm
+const RELATIVE_SPECIFIER = /(?:from\s+|import\(|^\s*import\s+)['"](\.[^'"]*)['"]/gm
 const TRAILING_COMMENT = /\s\/\/.*$/
 const TS_EXT = /\.ts$/
 
@@ -79,7 +80,8 @@ for (const file of fs.readdirSync(dist, { recursive: true })) {
   const source = fs.readFileSync(path.join(dist, name), 'utf8')
   for (const [, specifier] of source.matchAll(RELATIVE_SPECIFIER)) {
     const target = path.resolve(path.dirname(path.join(dist, name)), specifier)
-    if (!fs.existsSync(target))
+    // A directory is not a module under Node ESM, so it must be a file.
+    if (!fs.existsSync(target) || !fs.statSync(target).isFile())
       throw new Error(`dist/${name} imports ${specifier}, which was not emitted`)
   }
 }

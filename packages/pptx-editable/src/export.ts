@@ -22,7 +22,12 @@ export interface EditableExportOptions {
   scale: number
 }
 
-/** CSS pixels. Chromium's compositor limit is on device pixels, so this stays well below it at scale 2. */
+/**
+ * CSS pixels. A guard against runaway decks rather than a Chromium constant:
+ * the device scale factor multiplies this, and viewports over 20k device
+ * pixels have rendered fine in testing. Beyond the cap the export still works;
+ * only lazy content past it renders as it would off-screen.
+ */
 const MAX_VIEWPORT_HEIGHT = 16384
 
 const IMPORT_CONDITIONS = new Set(['import', 'node', 'default'])
@@ -42,8 +47,10 @@ function entryFromExports(value: unknown): string | undefined {
     if ('.' in map)
       return entryFromExports(map['.'])
     for (const condition of Object.keys(map)) {
-      if (IMPORT_CONDITIONS.has(condition))
-        return entryFromExports(map[condition])
+      // A condition whose nested value yields nothing does not end the walk; Node moves to the next key.
+      const entry = IMPORT_CONDITIONS.has(condition) ? entryFromExports(map[condition]) : undefined
+      if (entry)
+        return entry
     }
   }
   return undefined
@@ -79,6 +86,7 @@ async function importFromDeck(name: string, deckDir: string): Promise<any> {
     const pkgJsonPath = path.join(dir, 'node_modules', name, 'package.json')
     if (fs.existsSync(pkgJsonPath)) {
       const pkg = JSON.parse(fs.readFileSync(pkgJsonPath, 'utf8'))
+      // `main` only: the `module` field is a bundler convention and may name a browser build.
       const entry = entryFromExports(pkg.exports) ?? pkg.main
       if (typeof entry !== 'string')
         throw new Error(`${name} at ${path.dirname(pkgJsonPath)} has no usable entry in its package.json`)
@@ -143,6 +151,7 @@ export async function exportEditable(opts: EditableExportOptions): Promise<Edita
   let browser: any
   let page: Page
   let port = 0
+  let viewportCapWarned = false
   try {
     server = await createServer(options, { server: { port: 12445, strictPort: false }, clearScreen: false, logLevel: 'error' })
     await server.listen()
@@ -279,12 +288,11 @@ export async function exportEditable(opts: EditableExportOptions): Promise<Edita
     const viewport = page.viewportSize()
     if (!viewport || documentHeight <= viewport.height)
       return
-    // Chromium refuses very tall surfaces, and the device scale factor
-    // multiplies the pixels behind them. Beyond the cap the export still
-    // works; only lazy content past it may render as it would off-screen.
     const height = Math.min(documentHeight, MAX_VIEWPORT_HEIGHT)
-    if (height < documentHeight)
+    if (height < documentHeight && !viewportCapWarned) {
+      viewportCapWarned = true
       console.warn(`  print page is ${documentHeight}px tall; viewport capped at ${MAX_VIEWPORT_HEIGHT}px`)
+    }
     if (height > viewport.height)
       await page.setViewportSize({ width: viewport.width, height })
   }

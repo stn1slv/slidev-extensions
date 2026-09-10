@@ -8,10 +8,12 @@ This is a standalone build of [slidevjs/slidev#2722](https://github.com/slidevjs
 
 ## Install
 
-Globally, once, on macOS, Windows or Linux with Node 22.18 or newer:
+Globally, once, on macOS, Windows or Linux with Node 22.18 or newer, either from npm (after the first release) or straight from GitHub, no clone needed:
 
 ```bash
 npm i -g slidev-export-pptx-editable
+# or
+npm i -g github:stn1slv/slidev-extensions
 ```
 
 or as a dev dependency of the deck, next to `slides.md`:

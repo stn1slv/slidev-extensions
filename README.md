@@ -12,10 +12,11 @@ Tools for [Slidev](https://sli.dev) that live outside the Slidev codebase, one n
 
 Each package runs on macOS, Windows and Linux with Node 22.18 or newer; CI installs the packed tarball into a fresh deck and runs an export on all three. The tool is installed into the deck, next to `slides.md`, so it uses the deck's own Slidev and Playwright.
 
-**From npm**, once a release exists (the `Release` workflow publishes on a `<package>-v<version>` tag):
+**One command, no clone.** From npm once a release exists (the `Release` workflow publishes on a `<package>-v<version>` tag), or straight from GitHub at any time. The GitHub form clones the repository into npm's cache, builds `dist/` through the root `prepare` script, and installs the binary; pin a branch or tag after `#` if you need one.
 
 ```bash
-npm i -g slidev-export-pptx-editable
+npm i -g slidev-export-pptx-editable        # from npm
+npm i -g github:stn1slv/slidev-extensions   # from GitHub, main branch
 cd <deck-folder>
 npm i -D playwright-chromium && npx playwright install chromium
 slidev-pptx-editable slides.md --output dist/slides.pptx

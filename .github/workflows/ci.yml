@@ -90,6 +90,22 @@ jobs:
           npx slidev-pptx-editable slides.md --output out/ci-deck.pptx --verbose
           test -s out/ci-deck.pptx
 
+      # The repository root is itself installable straight from GitHub
+      # (`npm i -g github:stn1slv/slidev-extensions`): npm clones it, runs
+      # the root prepare script that builds dist/, and packs what `files`
+      # lists. This installs the commit under test the same way.
+      - name: Install from git without a clone
+        working-directory: ${{ runner.temp }}
+        env:
+          SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          REPO: ${{ github.repository }}
+        run: |
+          mkdir -p git-install && cd git-install
+          npm init -y > /dev/null
+          npm i --no-audit --no-fund "git+https://github.com/$REPO.git#$SHA"
+          npx slidev-pptx-editable --help > help.txt
+          head -3 help.txt
+
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: ci-deck-${{ matrix.os }}-node${{ matrix.node }}
