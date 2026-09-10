@@ -107,6 +107,24 @@ jobs:
           npx slidev-pptx-editable --help > help.txt
           head -3 help.txt
 
+      # The documented command: a global install from GitHub's archive
+      # tarball. A git spec is not used globally on purpose: npm 11 installs
+      # a global git dependency as a symlink into its temporary clone and
+      # then deletes the clone. The package must end up as a real directory
+      # with dist/ built by postinstall, and the binary must run.
+      - name: Install globally from the archive tarball
+        working-directory: ${{ runner.temp }}
+        env:
+          SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          REPO: ${{ github.repository }}
+        run: |
+          npm i -g --no-audit --no-fund "https://github.com/$REPO/archive/$SHA.tar.gz"
+          root=$(npm root -g)
+          test -d "$root/slidev-extensions" && test ! -L "$root/slidev-extensions"
+          test -f "$root/slidev-extensions/packages/pptx-editable/dist/cli.js"
+          slidev-pptx-editable --help > help-global.txt
+          head -1 help-global.txt
+
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: ci-deck-${{ matrix.os }}-node${{ matrix.node }}
