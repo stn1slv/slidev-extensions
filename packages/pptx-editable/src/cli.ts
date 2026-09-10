@@ -92,11 +92,18 @@ async function main() {
 }
 
 // Set the exit code and let the event loop drain rather than calling
-// `process.exit`, which can cut off stdout when it is a pipe or a file.
-main().catch((error) => {
-  const verbose = process.argv.includes('--verbose')
-  console.error(red(`  ✗ ${error instanceof Error ? error.message : String(error)}`))
-  if (verbose && error instanceof Error && error.stack)
-    console.error(dim(error.stack))
-  process.exitCode = 1
-})
+// `process.exit`, which can cut off stdout when it is a pipe or a file. If a
+// handle the dev server or the browser left behind keeps the loop alive, the
+// unref'd timer ends the process anyway, after stdout has had time to flush.
+main()
+  .catch((error) => {
+    // Read from argv rather than the parsed values, so a parse error can be verbose too.
+    const verbose = process.argv.includes('--verbose')
+    console.error(red(`  ✗ ${error instanceof Error ? error.message : String(error)}`))
+    if (verbose && error instanceof Error && error.stack)
+      console.error(dim(error.stack))
+    process.exitCode = 1
+  })
+  .finally(() => {
+    setTimeout(() => process.exit(process.exitCode ?? 0), 5000).unref()
+  })

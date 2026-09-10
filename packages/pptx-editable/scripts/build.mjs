@@ -17,7 +17,9 @@ import { fileURLToPath } from 'node:url'
 
 const MULTI_SPACE_INSIDE = /\S {2,}\S/
 const ANNOTATION_GAP = /(\S) {2,}/g
-const TS_IMPORT = /(from\s+['"]\.[^'"]*)\.ts(['"])/g
+const TS_IMPORT = /((?:from\s+|import\()['"]\.[^'"]*)\.ts(['"])/g
+const RELATIVE_SPECIFIER = /(?:from\s+|import\()['"](\.[^'"]*)['"]/g
+const TRAILING_COMMENT = /\s\/\/.*$/
 const TS_EXT = /\.ts$/
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)))
@@ -35,7 +37,8 @@ const dist = path.join(root, 'dist')
 // spaces, and the vendored index.ts indents a report line inside a literal.
 function assertNoMultiSpaceLiterals(file, source) {
   source.split('\n').forEach((line, index) => {
-    const body = line.trimStart()
+    // Comments may align text with spaces; only code and literals are checked.
+    const body = line.trimStart().replace(TRAILING_COMMENT, '')
     if (body.startsWith('//') || body.startsWith('*') || body.startsWith('/*'))
       return
     if (MULTI_SPACE_INSIDE.test(body)) {
@@ -67,5 +70,21 @@ for (const file of fs.readdirSync(src, { recursive: true })) {
   fs.writeFileSync(out, strip(path.join(src, name), name === 'pptx/walker.ts'))
   count++
 }
-fs.copyFileSync(path.join(dist, 'pptx/walker.js'), path.join(dist, 'pptx-walker.mjs'))
+// Every relative specifier in dist/ must name an emitted file, or the error
+// would surface only at runtime on the code path that uses it.
+for (const file of fs.readdirSync(dist, { recursive: true })) {
+  const name = String(file)
+  if (!name.endsWith('.js'))
+    continue
+  const source = fs.readFileSync(path.join(dist, name), 'utf8')
+  for (const [, specifier] of source.matchAll(RELATIVE_SPECIFIER)) {
+    const target = path.resolve(path.dirname(path.join(dist, name)), specifier)
+    if (!fs.existsSync(target))
+      throw new Error(`dist/${name} imports ${specifier}, which was not emitted`)
+  }
+}
+const walker = path.join(dist, 'pptx/walker.js')
+if (!fs.existsSync(walker))
+  throw new Error(`expected ${walker} for the vendored walker test; was walker.ts renamed upstream?`)
+fs.copyFileSync(walker, path.join(dist, 'pptx-walker.mjs'))
 console.log(`build: ${count} files to dist/ (types stripped by Node), plus dist/pptx-walker.mjs for the walker test`)

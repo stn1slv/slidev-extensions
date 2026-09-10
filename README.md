@@ -45,7 +45,7 @@ On Windows use PowerShell or `cmd` with the same commands; paths may use either 
 
 ## Releasing
 
-Bump `version` in the package's `package.json`, commit, and push a tag named `<package>-v<version>`, for example `pptx-editable-v0.1.0`. The `Release` workflow checks that the tag and the version agree, runs lint and tests, packs the tarball, installs it globally as a smoke test, publishes to npm with provenance, and creates a GitHub Release with the tarball attached. It needs the repository secret `NPM_TOKEN` (an npm automation token with publish rights). Running the workflow by hand with `dry-run` on does everything except publish.
+Bump `version` in the package's `package.json`, commit, and push a tag named `<package>-v<version>`, for example `pptx-editable-v0.1.0`. The `Release` workflow checks that the tag and the version agree, runs lint and tests, packs the tarball, installs it globally as a smoke test, publishes to npm with provenance, and creates a GitHub Release with the tarball attached. Authentication to npm is either trusted publishing (configure the repository and workflow as the package's trusted publisher on npmjs.com; no secret needed) or the repository secret `NPM_TOKEN`, a granular access token with publish rights and 2FA bypass, valid at most 90 days. The first publish of a new package needs the token, since a trusted publisher is configured per existing package. Running the workflow by hand with `dry-run` on does everything except publish.
 
 ## Development
 

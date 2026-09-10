@@ -22,7 +22,16 @@ export interface EditableExportOptions {
   scale: number
 }
 
-/** Pick the entry file out of a `package.json` `exports` value, following conditions the way Node does for `import`. */
+/** CSS pixels. Chromium's compositor limit is on device pixels, so this stays well below it at scale 2. */
+const MAX_VIEWPORT_HEIGHT = 16384
+
+const IMPORT_CONDITIONS = new Set(['import', 'node', 'default'])
+
+/**
+ * Pick the entry file out of a `package.json` `exports` value the way Node
+ * does for `import`: conditions are tried in the order the package wrote them,
+ * and the first one this tool understands wins.
+ */
 function entryFromExports(value: unknown): string | undefined {
   if (typeof value === 'string')
     return value
@@ -32,8 +41,8 @@ function entryFromExports(value: unknown): string | undefined {
     const map = value as Record<string, unknown>
     if ('.' in map)
       return entryFromExports(map['.'])
-    for (const condition of ['import', 'node', 'default']) {
-      if (condition in map)
+    for (const condition of Object.keys(map)) {
+      if (IMPORT_CONDITIONS.has(condition))
         return entryFromExports(map[condition])
     }
   }
@@ -49,14 +58,20 @@ function entryFromExports(value: unknown): string | undefined {
 async function importFromDeck(name: string, deckDir: string): Promise<any> {
   const require = createRequire(path.join(deckDir, 'package.json'))
 
-  // The common case: `require.resolve` honours the `exports` map.
+  // The common case. `require.resolve` follows the `exports` map under the
+  // `require` condition, so a dual package yields its CommonJS build; that is
+  // fine for Playwright. Only resolution is guarded: a module that fails while
+  // loading must surface its own error, not a "not installed" message.
+  let resolved: string | undefined
   try {
-    return await import(pathToFileURL(require.resolve(name)).href)
+    resolved = require.resolve(name)
   }
   catch (error: any) {
     if (error?.code !== 'ERR_PACKAGE_PATH_NOT_EXPORTED' && error?.code !== 'MODULE_NOT_FOUND')
       throw error
   }
+  if (resolved)
+    return await import(pathToFileURL(resolved).href)
 
   // An ESM-only package such as @slidev/cli exposes no `require` condition, so
   // walk up from the deck to its package.json and read the entry ourselves.
@@ -64,7 +79,7 @@ async function importFromDeck(name: string, deckDir: string): Promise<any> {
     const pkgJsonPath = path.join(dir, 'node_modules', name, 'package.json')
     if (fs.existsSync(pkgJsonPath)) {
       const pkg = JSON.parse(fs.readFileSync(pkgJsonPath, 'utf8'))
-      const entry = entryFromExports(pkg.exports) ?? pkg.module ?? pkg.main
+      const entry = entryFromExports(pkg.exports) ?? pkg.main
       if (typeof entry !== 'string')
         throw new Error(`${name} at ${path.dirname(pkgJsonPath)} has no usable entry in its package.json`)
       return await import(pathToFileURL(path.join(path.dirname(pkgJsonPath), entry)).href)
@@ -148,8 +163,11 @@ export async function exportEditable(opts: EditableExportOptions): Promise<Edita
     page = await context.newPage()
 
     const result = await exportPptxEditable({ page, slides: options.data.slides, width, height, pages, go }, output)
-    if (result.slideCount === 0)
+    if (result.slideCount === 0) {
+      // The exporter has already written the file; leave nothing that looks like success.
+      await fs.promises.rm(result.output, { force: true })
       throw new Error('the print page rendered no slides, so nothing was exported')
+    }
     return result
   }
   finally {
@@ -193,13 +211,10 @@ export async function exportEditable(opts: EditableExportOptions): Promise<Edita
     // The print page holds one container per click step, and `--range` does not
     // shrink what it renders, so the viewport sized from the page count above
     // can end well before the last container. Grow it to the whole document so
-    // lazy content below the fold renders the same way as at the top.
-    if (no === 'print') {
-      const documentHeight: number = await page.evaluate(() => document.documentElement.scrollHeight)
-      const viewport = page.viewportSize()
-      if (viewport && documentHeight > viewport.height)
-        await page.setViewportSize({ width: viewport.width, height: documentHeight })
-    }
+    // lazy content below the fold renders the same way as at the top, once now
+    // and once more after the waits below, since loading can add height.
+    if (no === 'print')
+      await growViewportToDocument()
 
     // Wait for slides to be loaded
     {
@@ -254,6 +269,24 @@ export async function exportEditable(opts: EditableExportOptions): Promise<Edita
     // Wait for the given time
     if (opts.wait)
       await page.waitForTimeout(opts.wait)
+
+    if (no === 'print')
+      await growViewportToDocument()
+  }
+
+  async function growViewportToDocument() {
+    const documentHeight: number = await page.evaluate(() => document.documentElement.scrollHeight)
+    const viewport = page.viewportSize()
+    if (!viewport || documentHeight <= viewport.height)
+      return
+    // Chromium refuses very tall surfaces, and the device scale factor
+    // multiplies the pixels behind them. Beyond the cap the export still
+    // works; only lazy content past it may render as it would off-screen.
+    const height = Math.min(documentHeight, MAX_VIEWPORT_HEIGHT)
+    if (height < documentHeight)
+      console.warn(`  print page is ${documentHeight}px tall; viewport capped at ${MAX_VIEWPORT_HEIGHT}px`)
+    if (height > viewport.height)
+      await page.setViewportSize({ width: viewport.width, height })
   }
 }
 

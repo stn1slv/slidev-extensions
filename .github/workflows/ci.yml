@@ -2,13 +2,21 @@ name: CI
 
 on:
   push:
-    branches: [main, 'feat/**']
+    branches: [main]
   pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   pptx-editable:
     name: pptx-editable (${{ matrix.os }}, node ${{ matrix.node }})
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -19,9 +27,9 @@ jobs:
         shell: bash
         working-directory: packages/pptx-editable
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: ${{ matrix.node }}
           cache: npm
@@ -39,7 +47,7 @@ jobs:
       - name: Pack
         run: |
           mkdir -p ../../ci-deck
-          npm pack --pack-destination ../../ci-deck
+          npm pack --json --pack-destination ../../ci-deck > /dev/null
 
       # The tarball goes into a fresh deck the way a user would install it:
       # a real node_modules directory, not a symlink, which is the case Node's
@@ -53,6 +61,9 @@ jobs:
 
       - name: Export a deck
         working-directory: ci-deck
+        env:
+          OS: ${{ matrix.os }}
+          NODE: ${{ matrix.node }}
         run: |
           cat > slides.md <<'MD'
           ---
@@ -62,7 +73,7 @@ jobs:
 
           # CI deck
 
-          Exported on ${{ matrix.os }} with Node ${{ matrix.node }}.
+          Exported in CI.
 
           ---
 
@@ -75,10 +86,11 @@ jobs:
           const answer = 42
           ```
           MD
+          echo "$OS, node $NODE"
           npx slidev-pptx-editable slides.md --output out/ci-deck.pptx --verbose
           test -s out/ci-deck.pptx
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: ci-deck-${{ matrix.os }}-node${{ matrix.node }}
           path: ci-deck/out/ci-deck.pptx
