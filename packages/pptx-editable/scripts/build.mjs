@@ -89,4 +89,5 @@ const walker = path.join(dist, 'pptx/walker.js')
 if (!fs.existsSync(walker))
   throw new Error(`expected ${walker} for the vendored walker test; was walker.ts renamed upstream?`)
 fs.copyFileSync(walker, path.join(dist, 'pptx-walker.mjs'))
-console.log(`build: ${count} files to dist/ (types stripped by Node), plus dist/pptx-walker.mjs for the walker test`)
+// stderr, so a caller parsing npm's JSON output is not disturbed by lifecycle scripts.
+console.error(`build: ${count} files to dist/ (types stripped by Node), plus dist/pptx-walker.mjs for the walker test`)

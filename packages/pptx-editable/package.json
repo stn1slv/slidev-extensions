@@ -34,10 +34,6 @@
     "test": "vitest run",
     "lint": "tsc --noEmit && eslint ."
   },
-  "publishConfig": {
-    "access": "public",
-    "provenance": true
-  },
   "peerDependencies": {
     "@slidev/cli": "^52.0.0",
     "playwright": "^1.16.0",

@@ -8,32 +8,24 @@ This is a standalone build of [slidevjs/slidev#2722](https://github.com/slidevjs
 
 ## Install
 
-Globally, once, on macOS, Windows or Linux with Node 22.18 or newer, either from npm (after the first release) or straight from GitHub, no clone needed:
+Globally, once, on macOS, Windows or Linux with Node 22.18 or newer, straight from GitHub, no clone needed:
 
 ```bash
-npm i -g slidev-export-pptx-editable
-# or
 npm i -g github:stn1slv/slidev-extensions
 ```
 
-or as a dev dependency of the deck, next to `slides.md`:
-
-```bash
-npm i -D slidev-export-pptx-editable
-```
-
-Either way the deck needs a browser for Playwright:
+The deck itself needs a browser for Playwright:
 
 ```bash
 npm i -D playwright-chromium
 npx playwright install chromium   # once per machine
 ```
 
-Releases are cut by the repository's `Release` workflow on a `pptx-editable-v<version>` tag; each one also attaches the tarball to the GitHub Release for installs without registry access.
+A tag such as `pptx-editable-v0.1.0` pins a version: `npm i -g github:stn1slv/slidev-extensions#pptx-editable-v0.1.0`. The package is not published to npm; it is a bridge until the upstream pull request ships.
 
 The tool resolves `@slidev/cli`, the theme and Playwright from the deck, not from its own folder, so the deck decides which Slidev version renders. If the deck has the full `playwright` package instead of `playwright-chromium`, that is used. Requires Node 22.18 or newer. CI installs the packed tarball into a fresh deck and runs an export on Ubuntu, macOS and Windows with Node 22 and 24.
 
-From a checkout rather than the registry, run `make setup` in `packages/pptx-editable` once (it installs and builds `dist/`), then add the folder as a `file:` dependency of the deck.
+From a checkout, run `make setup` in `packages/pptx-editable` once (it installs and builds `dist/`), then add the folder as a `file:` dependency of the deck.
 
 ## Use
 
