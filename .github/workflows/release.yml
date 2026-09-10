@@ -115,7 +115,9 @@ jobs:
         shell: bash
         run: |
           mkdir -p "$RUNNER_TEMP/pack"
-          file=$(npm pack --json --pack-destination "$RUNNER_TEMP/pack" | node -p 'JSON.parse(require("fs").readFileSync(0, "utf8"))[0].filename')
+          # dist/ was built by the prepare script during npm ci; running it
+          # again here would print into the JSON that is parsed below.
+          file=$(npm pack --json --ignore-scripts --pack-destination "$RUNNER_TEMP/pack" | node -p 'JSON.parse(require("fs").readFileSync(0, "utf8"))[0].filename')
           echo "tarball=$file" >> "$GITHUB_OUTPUT"
           tar tzf "$RUNNER_TEMP/pack/$file"
 

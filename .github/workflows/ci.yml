@@ -47,7 +47,7 @@ jobs:
       - name: Pack
         run: |
           mkdir -p ../../ci-deck
-          npm pack --json --pack-destination ../../ci-deck > /dev/null
+          npm pack --json --ignore-scripts --pack-destination ../../ci-deck > /dev/null
 
       # The tarball goes into a fresh deck the way a user would install it:
       # a real node_modules directory, not a symlink, which is the case Node's
