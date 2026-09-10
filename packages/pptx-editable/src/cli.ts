@@ -26,8 +26,17 @@ Options:
                                                                    [default: networkidle]
       --executable-path <p> browser executable for Playwright
       --scale <n>           device scale factor for rasterized parts  [default: 2]
+      --verbose             print the stack trace of a failure
   -h, --help
 `
+
+/** A finite number no smaller than `min`, or an error that names the option. */
+function numberOption(name: string, raw: string, min: number): number {
+  const value = Number(raw)
+  if (raw.trim() === '' || !Number.isFinite(value) || value < min)
+    throw new Error(`--${name} must be a number of at least ${min}, got: ${raw}`)
+  return value
+}
 
 async function main() {
   const { values, positionals } = parseArgs({
@@ -45,6 +54,7 @@ async function main() {
       'wait-until': { type: 'string', default: 'networkidle' },
       'executable-path': { type: 'string' },
       'scale': { type: 'string', default: '2' },
+      'verbose': { type: 'boolean', default: false },
       'help': { type: 'boolean', short: 'h', default: false },
     },
   })
@@ -70,21 +80,23 @@ async function main() {
     range: values.range,
     withClicks: values['with-clicks'],
     dark: values.dark,
-    timeout: Number(values.timeout),
-    wait: Number(values.wait),
+    timeout: numberOption('timeout', values.timeout, 0),
+    wait: numberOption('wait', values.wait, 0),
     waitUntil: waitUntil === 'none' ? undefined : waitUntil as 'networkidle' | 'load' | 'domcontentloaded',
     executablePath: values['executable-path'],
-    scale: Number(values.scale),
+    scale: numberOption('scale', values.scale, 0.1),
   })
 
   reportEditableExport(result)
   console.log(`${green('  ✓ ')}${dim('exported to ')}${result.output} ${dim(`(${result.slideCount} slides)`)}\n`)
 }
 
-main().then(
-  () => process.exit(process.exitCode ?? 0),
-  (error) => {
-    console.error(red(`  ✗ ${error instanceof Error ? error.message : String(error)}`))
-    process.exit(1)
-  },
-)
+// Set the exit code and let the event loop drain rather than calling
+// `process.exit`, which can cut off stdout when it is a pipe or a file.
+main().catch((error) => {
+  const verbose = process.argv.includes('--verbose')
+  console.error(red(`  ✗ ${error instanceof Error ? error.message : String(error)}`))
+  if (verbose && error instanceof Error && error.stack)
+    console.error(dim(error.stack))
+  process.exitCode = 1
+})

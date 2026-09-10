@@ -13,7 +13,9 @@ npm i -D slidev-export-pptx-editable playwright-chromium
 npx playwright install chromium   # once
 ```
 
-The tool resolves `@slidev/cli`, the theme and Playwright from the deck, not from its own folder, so the deck decides which Slidev version renders. Requires Node 22.18 or newer; there is no build step, Node runs the TypeScript sources directly.
+The tool resolves `@slidev/cli`, the theme and Playwright from the deck, not from its own folder, so the deck decides which Slidev version renders. If the deck has the full `playwright` package instead of `playwright-chromium`, that is used. Requires Node 22.18 or newer.
+
+From a checkout rather than the registry, run `make setup` in `packages/pptx-editable` once (it installs and builds `dist/`), then add the folder as a `file:` dependency of the deck.
 
 ## Use
 
@@ -54,8 +56,10 @@ make test    # the pull request's own tests, run against the copy
 make lint    # tsc and eslint
 ```
 
-`scripts/sync.sh` makes two mechanical edits to the copy, both documented at the top of the script: relative imports gain a `.ts` extension, and one test's path to the shipped walker is shortened by one directory. `make build` writes `dist/pptx-walker.mjs`, the walker as Node strips it, so that test checks what is actually sent to the browser.
+`scripts/sync.sh` refuses to run on a dirty fork, makes two mechanical edits to the copy (relative imports gain a `.ts` extension, and one test's path to the shipped walker is shortened by one directory), and fails if any relative import is left without an extension.
+
+`make build` writes `dist/` from `src/` with Node's own type stripping (`module.stripTypeScriptTypes`), not a transpiler, so what ships is what Node would run from the sources. Node refuses to strip types under `node_modules`, which is why an installed copy needs `dist/`. The build also writes `dist/pptx-walker.mjs` so the vendored walker test checks the function that is actually sent to the browser, and it fails if a literal in the sources holds two consecutive spaces, since the emitted code collapses the runs that stripping leaves behind.
 
 ## License
 
-MIT. The exporter under `src/pptx/` is from the Slidev repository and carries Slidev's MIT license.
+MIT. The exporter under `src/pptx/` is from the Slidev repository and carries Slidev's MIT license. The `LICENSE` file ships in the package.

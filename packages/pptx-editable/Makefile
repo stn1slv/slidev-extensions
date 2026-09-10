@@ -1,6 +1,6 @@
 .PHONY: setup test lint format build run clean sync
 
-setup: ## Install dependencies and the Chromium build Playwright needs
+setup: ## Install dependencies (which also builds dist/) and the Chromium build Playwright needs
 	npm install
 	npx playwright install chromium
 
@@ -14,10 +14,10 @@ lint: ## Type-check and lint
 format: ## Auto-format with the same rules lint applies
 	npx eslint . --fix
 
-build: ## Write dist/pptx-walker.mjs, the walker as Node ships it, for the tests
+build: ## Emit dist/ from src/ with Node's type stripping
 	node scripts/build.mjs
 
-run: ## Export the deck in DECK (default: slides.md in the current directory)
+run: build ## Export DECK (a slides.md path, default: slides.md in this folder)
 	node bin/cli.mjs $(DECK)
 
 clean:

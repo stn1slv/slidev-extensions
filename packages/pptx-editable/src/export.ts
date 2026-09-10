@@ -1,5 +1,6 @@
 import type { Page } from 'playwright-chromium'
 import type { EditableExportResult } from './pptx/index.ts'
+import fs from 'node:fs'
 import { createRequire } from 'node:module'
 import path from 'node:path'
 import process from 'node:process'
@@ -21,24 +22,81 @@ export interface EditableExportOptions {
   scale: number
 }
 
+/** Pick the entry file out of a `package.json` `exports` value, following conditions the way Node does for `import`. */
+function entryFromExports(value: unknown): string | undefined {
+  if (typeof value === 'string')
+    return value
+  if (Array.isArray(value))
+    return value.map(entryFromExports).find(Boolean)
+  if (value && typeof value === 'object') {
+    const map = value as Record<string, unknown>
+    if ('.' in map)
+      return entryFromExports(map['.'])
+    for (const condition of ['import', 'node', 'default']) {
+      if (condition in map)
+        return entryFromExports(map[condition])
+    }
+  }
+  return undefined
+}
+
 /**
  * Resolve a package from the deck being exported rather than from this tool.
  * A `file:` or global install of this tool has its own `node_modules`, while
  * the `@slidev/cli`, theme and browser the deck actually uses live next to
  * `slides.md`. Slidev itself resolves Playwright the same way.
  */
-async function importFromDeck(name: string, entry: string): Promise<any> {
-  const require = createRequire(path.resolve(path.dirname(entry), 'package.json'))
-  const pkgJsonPath = require.resolve(`${name}/package.json`)
-  const pkg = require(pkgJsonPath)
-  const main = typeof pkg.exports?.['.'] === 'object' ? pkg.exports['.'].import : pkg.main
-  return import(pathToFileURL(path.join(path.dirname(pkgJsonPath), main)).href)
+async function importFromDeck(name: string, deckDir: string): Promise<any> {
+  const require = createRequire(path.join(deckDir, 'package.json'))
+
+  // The common case: `require.resolve` honours the `exports` map.
+  try {
+    return await import(pathToFileURL(require.resolve(name)).href)
+  }
+  catch (error: any) {
+    if (error?.code !== 'ERR_PACKAGE_PATH_NOT_EXPORTED' && error?.code !== 'MODULE_NOT_FOUND')
+      throw error
+  }
+
+  // An ESM-only package such as @slidev/cli exposes no `require` condition, so
+  // walk up from the deck to its package.json and read the entry ourselves.
+  for (let dir = deckDir; ; dir = path.dirname(dir)) {
+    const pkgJsonPath = path.join(dir, 'node_modules', name, 'package.json')
+    if (fs.existsSync(pkgJsonPath)) {
+      const pkg = JSON.parse(fs.readFileSync(pkgJsonPath, 'utf8'))
+      const entry = entryFromExports(pkg.exports) ?? pkg.module ?? pkg.main
+      if (typeof entry !== 'string')
+        throw new Error(`${name} at ${path.dirname(pkgJsonPath)} has no usable entry in its package.json`)
+      return await import(pathToFileURL(path.join(path.dirname(pkgJsonPath), entry)).href)
+    }
+    if (dir === path.dirname(dir))
+      break
+  }
+  throw new Error(`cannot find ${name} from ${deckDir}; install it in the deck with: npm i -D ${name}`)
+}
+
+async function importPlaywright(deckDir: string): Promise<any> {
+  try {
+    return await importFromDeck('playwright-chromium', deckDir)
+  }
+  catch (first) {
+    // Slidev accepts the full `playwright` package too, and many decks have that one.
+    try {
+      return await importFromDeck('playwright', deckDir)
+    }
+    catch {
+      throw first
+    }
+  }
 }
 
 export async function exportEditable(opts: EditableExportOptions): Promise<EditableExportResult> {
-  const { resolveOptions, createServer } = await importFromDeck('@slidev/cli', opts.entry)
-  const playwright = await importFromDeck('playwright-chromium', opts.entry)
-  const chromium = playwright.chromium ?? playwright.default.chromium
+  const deckDir = path.resolve(path.dirname(opts.entry))
+  const { resolveOptions, createServer } = await importFromDeck('@slidev/cli', deckDir)
+  const playwright = await importPlaywright(deckDir)
+  const chromium = playwright.chromium ?? playwright.default?.chromium
+  if (!chromium)
+    throw new Error('the Playwright package found in the deck exports no `chromium`')
 
   const options = await resolveOptions({ entry: opts.entry, theme: opts.theme }, 'export')
   const config = options.data.config
@@ -47,42 +105,65 @@ export async function exportEditable(opts: EditableExportOptions): Promise<Edita
   const height = Math.round(width / config.aspectRatio)
   const total: number = options.data.slides.length
   const pages = parseRangeString(total, opts.range)
-  // Export navigates by URL; memory routing ignores the URL, so fall back to history.
-  const routerMode: string = config.routerMode === 'memory' ? 'history' : config.routerMode
+  if (pages.length === 0)
+    throw new Error(`--range "${opts.range}" selects none of the ${total} slides`)
+
+  // The export navigates by URL, which memory routing ignores. The client
+  // reads the mode from this config when the server serves it, so switch it
+  // here rather than in the URL alone.
+  if (config.routerMode === 'memory')
+    config.routerMode = 'history'
+  const routerMode: string = config.routerMode
   const dark = opts.dark || config.colorSchema === 'dark'
+  // Same as `slidev export`, which serves the deck at the root regardless of `base`.
   const base = '/'
 
   let output = opts.output || config.exportFilename || `${path.basename(opts.entry, '.md')}-export`
   if (!output.endsWith('.pptx'))
     output = `${output}.pptx`
+  // The vendored exporter writes with `fs.writeFile` and cannot create `dist/`.
+  await fs.promises.mkdir(path.dirname(path.resolve(output)), { recursive: true })
 
-  const server = await createServer(options, { server: { port: 12445, strictPort: false }, clearScreen: false, logLevel: 'error' })
-  await server.listen()
-  const address = server.httpServer?.address()
-  if (!address || typeof address !== 'object')
-    throw new Error('Failed to get Vite server port')
-  const port: number = address.port
-
-  const browser = await chromium.launch({ executablePath: opts.executablePath })
-  const context = await browser.newContext({
-    viewport: {
-      width,
-      // Calculate height for every slides to be in the viewport to trigger the rendering of iframes (twitter, youtube...)
-      height: height * pages.length,
-    },
-    deviceScaleFactor: opts.scale,
-  })
-  const page: Page = await context.newPage()
-
+  let server: any
+  let browser: any
+  let page: Page
+  let port = 0
   try {
-    return await exportPptxEditable({ page, slides: options.data.slides, width, height, pages, go }, output)
+    server = await createServer(options, { server: { port: 12445, strictPort: false }, clearScreen: false, logLevel: 'error' })
+    await server.listen()
+    const address = server.httpServer?.address()
+    if (!address || typeof address !== 'object')
+      throw new Error('Failed to get Vite server port')
+    port = address.port
+
+    browser = await chromium.launch({ executablePath: opts.executablePath })
+    const context = await browser.newContext({
+      viewport: {
+        width,
+        // Calculate height for every slides to be in the viewport to trigger the rendering of iframes (twitter, youtube...)
+        height: height * pages.length,
+      },
+      deviceScaleFactor: opts.scale,
+    })
+    page = await context.newPage()
+
+    const result = await exportPptxEditable({ page, slides: options.data.slides, width, height, pages, go }, output)
+    if (result.slideCount === 0)
+      throw new Error('the print page rendered no slides, so nothing was exported')
+    return result
   }
   finally {
-    await browser.close()
-    await server.close()
+    // Close both even when one of them throws; the process must not keep either alive.
+    const closed = await Promise.allSettled([browser?.close(), server?.close()])
+    for (const outcome of closed) {
+      if (outcome.status === 'rejected')
+        console.error(outcome.reason)
+    }
   }
 
-  // Copied from `exportSlides` in packages/slidev/node/commands/export.ts.
+  // Copied from `exportSlides` in packages/slidev/node/commands/export.ts and
+  // kept whole, per-slide branches included, so it diffs cleanly against
+  // upstream. Only `go('print')` is called today.
   async function go(no: number | string, clicks?: string) {
     const query = new URLSearchParams()
     if (opts.withClicks)
@@ -108,6 +189,17 @@ export async function exportEditable(opts: EditableExportOptions): Promise<Edita
       ? page.locator('body')
       : page.locator(`[data-slidev-no="${no}"]`)
     await slide.waitFor()
+
+    // The print page holds one container per click step, and `--range` does not
+    // shrink what it renders, so the viewport sized from the page count above
+    // can end well before the last container. Grow it to the whole document so
+    // lazy content below the fold renders the same way as at the top.
+    if (no === 'print') {
+      const documentHeight: number = await page.evaluate(() => document.documentElement.scrollHeight)
+      const viewport = page.viewportSize()
+      if (viewport && documentHeight > viewport.height)
+        await page.setViewportSize({ width: viewport.width, height: documentHeight })
+    }
 
     // Wait for slides to be loaded
     {
@@ -167,7 +259,7 @@ export async function exportEditable(opts: EditableExportOptions): Promise<Edita
 
 const RANGE_SEPARATOR = /[,;]/g
 
-/** Same grammar as `slidev export --range`: `1,3-5,8-`. Copied from @slidev/parser `parseRangeString`. */
+/** Same grammar as `slidev export --range`: `1,3-5,8-`. Copied from @slidev/parser `parseRangeString`, plus a lower bound. */
 export function parseRangeString(total: number, rangeStr?: string): number[] {
   const range = (from: number, to: number) => Array.from({ length: Math.max(0, to - from) }, (_, i) => from + i)
 
@@ -190,5 +282,5 @@ export function parseRangeString(total: number, rangeStr?: string): number[] {
     }
   }
 
-  return [...new Set(indexes)].filter(i => i <= total).sort((a, b) => a - b)
+  return [...new Set(indexes)].filter(i => Number.isInteger(i) && i >= 1 && i <= total).sort((a, b) => a - b)
 }
