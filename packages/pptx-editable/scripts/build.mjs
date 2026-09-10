@@ -58,7 +58,8 @@ function strip(file, collapse) {
 fs.rmSync(dist, { recursive: true, force: true })
 let count = 0
 for (const file of fs.readdirSync(src, { recursive: true })) {
-  const name = String(file)
+  // Forward slashes on every platform, so the walker check below matches on Windows too.
+  const name = String(file).split(path.sep).join('/')
   if (!name.endsWith('.ts') || name.endsWith('.test.ts'))
     continue
   const out = path.join(dist, name.replace(TS_EXT, '.js'))

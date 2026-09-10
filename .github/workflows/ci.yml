@@ -1,0 +1,84 @@
+name: CI
+
+on:
+  push:
+    branches: [main, 'feat/**']
+  pull_request:
+
+jobs:
+  pptx-editable:
+    name: pptx-editable (${{ matrix.os }}, node ${{ matrix.node }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        node: [22, 24]
+    defaults:
+      run:
+        shell: bash
+        working-directory: packages/pptx-editable
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+          cache-dependency-path: packages/pptx-editable/package-lock.json
+
+      - name: Install (builds dist/ through prepare)
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Test
+        run: npm test
+
+      - name: Pack
+        run: |
+          mkdir -p ../../ci-deck
+          npm pack --pack-destination ../../ci-deck
+
+      # The tarball goes into a fresh deck the way a user would install it:
+      # a real node_modules directory, not a symlink, which is the case Node's
+      # type stripping refuses. The deck brings its own Slidev and Playwright.
+      - name: Install the tarball into a fresh deck
+        working-directory: ci-deck
+        run: |
+          npm init -y > /dev/null
+          npm i --no-audit --no-fund @slidev/cli @slidev/theme-default playwright-chromium ./slidev-export-pptx-editable-*.tgz
+          npx playwright install --with-deps chromium
+
+      - name: Export a deck
+        working-directory: ci-deck
+        run: |
+          cat > slides.md <<'MD'
+          ---
+          theme: default
+          title: CI deck
+          ---
+
+          # CI deck
+
+          Exported on ${{ matrix.os }} with Node ${{ matrix.node }}.
+
+          ---
+
+          # A list and a code block
+
+          - one
+          - two <span v-click>three</span>
+
+          ```ts
+          const answer = 42
+          ```
+          MD
+          npx slidev-pptx-editable slides.md --output out/ci-deck.pptx --verbose
+          test -s out/ci-deck.pptx
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ci-deck-${{ matrix.os }}-node${{ matrix.node }}
+          path: ci-deck/out/ci-deck.pptx

@@ -1,5 +1,7 @@
 # slidev-export-pptx-editable
 
+[![CI](https://github.com/stn1slv/slidev-extensions/actions/workflows/ci.yml/badge.svg)](https://github.com/stn1slv/slidev-extensions/actions/workflows/ci.yml)
+
 Export a [Slidev](https://sli.dev) deck as PowerPoint with native shapes and editable text, rather than one picture per slide.
 
 This is a standalone build of [slidevjs/slidev#2722](https://github.com/slidevjs/slidev/pull/2722), which adds `slidev export --format pptx-editable`. Until that pull request is merged and released, this package gives the same result without a fork of Slidev: the exporter under `src/pptx/` is a verbatim copy of the pull request (commit in `UPSTREAM`), and about 150 lines of glue replace the parts of `slidev export` it plugs into. On the same deck the two produce byte-identical `.pptx` files apart from the document timestamps.
@@ -13,7 +15,7 @@ npm i -D slidev-export-pptx-editable playwright-chromium
 npx playwright install chromium   # once
 ```
 
-The tool resolves `@slidev/cli`, the theme and Playwright from the deck, not from its own folder, so the deck decides which Slidev version renders. If the deck has the full `playwright` package instead of `playwright-chromium`, that is used. Requires Node 22.18 or newer.
+The tool resolves `@slidev/cli`, the theme and Playwright from the deck, not from its own folder, so the deck decides which Slidev version renders. If the deck has the full `playwright` package instead of `playwright-chromium`, that is used. Requires Node 22.18 or newer. CI installs the packed tarball into a fresh deck and runs an export on Ubuntu, macOS and Windows with Node 22 and 24.
 
 From a checkout rather than the registry, run `make setup` in `packages/pptx-editable` once (it installs and builds `dist/`), then add the folder as a `file:` dependency of the deck.
 
