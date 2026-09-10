@@ -12,13 +12,13 @@ This is a bridge, not a product. Once the upstream pull request ships as `slidev
 
 ## Installation
 
-One command on macOS, Windows or Linux with Node 22.18 or newer, no clone and no git needed. npm downloads GitHub's archive of `main` and installs it like any package; there is no build step and no install script (npm 11 blocks those by default), because the binary runs the TypeScript sources through a small loader hook:
+One command on macOS, Windows or Linux with Node 22.18 or newer, no clone and no git needed. npm downloads GitHub's archive of a release tag and installs it like any package; there is no build step and no install script (npm 11 blocks those by default), because the binary runs the TypeScript sources through a small loader hook:
 
 ```bash
-npm i -g https://github.com/stn1slv/slidev-extensions/archive/refs/heads/main.tar.gz
+npm i -g https://github.com/stn1slv/slidev-extensions/archive/refs/tags/pptx-editable-v0.1.0.tar.gz
 ```
 
-To pin a version, use a tag's archive instead: `https://github.com/stn1slv/slidev-extensions/archive/refs/tags/pptx-editable-v0.1.0.tar.gz`. The `github:stn1slv/slidev-extensions` shorthand works for a project-local install but not for `-g`: npm 11 installs a global git dependency as a symlink into a temporary clone that it then deletes.
+Releases are tags named `pptx-editable-v<version>`, listed at https://github.com/stn1slv/slidev-extensions/tags; rerun the command with a newer tag to upgrade. The archive of `main` (`https://github.com/stn1slv/slidev-extensions/archive/refs/heads/main.tar.gz`) installs the latest commit instead. The `github:stn1slv/slidev-extensions` shorthand works for a project-local install but not for `-g`: npm 11 installs a global git dependency as a symlink into a temporary clone that it then deletes.
 
 Then, in the deck folder next to `slides.md`, the deck needs its own Slidev and a browser for Playwright:
 
