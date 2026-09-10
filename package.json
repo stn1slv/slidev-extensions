@@ -19,8 +19,7 @@
     "packages/pptx-editable/UPSTREAM",
     "packages/pptx-editable/bin",
     "packages/pptx-editable/package.json",
-    "packages/pptx-editable/src",
-    "!packages/pptx-editable/src/**/*.test.ts"
+    "packages/pptx-editable/src"
   ],
   "engines": {
     "node": ">=22.18"

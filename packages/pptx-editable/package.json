@@ -19,7 +19,6 @@
     "slidev-pptx-editable": "./bin/cli.mjs"
   },
   "files": [
-    "!src/**/*.test.ts",
     "LICENSE",
     "README.md",
     "UPSTREAM",
