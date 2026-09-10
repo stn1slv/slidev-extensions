@@ -1,0 +1,212 @@
+name: Release
+
+# Publishes one package to npm and attaches its tarball to a GitHub Release.
+#
+# Trigger by pushing a tag named <package>-v<version>, for example
+# `pptx-editable-v0.1.0`, whose version must equal the one in that package's
+# package.json and whose commit must be on main. Installing afterwards is the
+# same on every platform:
+#
+#   npm i -g slidev-export-pptx-editable
+#
+# A manual run from main with dry-run off publishes without a tag and without
+# a GitHub Release. That is the path for the very first publish of a package,
+# after which a trusted publisher can be configured; push the matching tag
+# right after it so the release exists too.
+#
+# The build job runs with read-only permissions; only the publish job holds
+# the release-writing token, and it installs nothing.
+#
+# Authentication to npm, in order of preference:
+#   1. Trusted publishing (OIDC): configure this repository and workflow file
+#      as the package's trusted publisher on npmjs.com, and set no secret.
+#      Needs npm 11.5.1 or newer, which the job installs.
+#   2. The repository secret NPM_TOKEN: a granular access token with publish
+#      rights and "bypass 2FA", at most 90 days long. Classic tokens no longer
+#      exist. Needed for the very first publish, before a trusted publisher
+#      can be configured for the package.
+
+on:
+  push:
+    tags: ['*-v*']
+  workflow_dispatch:
+    inputs:
+      package:
+        description: Folder under packages/ to publish
+        required: true
+        default: pptx-editable
+      dry-run:
+        description: Build and pack, but publish nothing
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      pkg: ${{ steps.meta.outputs.pkg }}
+      name: ${{ steps.meta.outputs.name }}
+      version: ${{ steps.meta.outputs.version }}
+      dir: ${{ steps.meta.outputs.dir }}
+      tarball: ${{ steps.pack.outputs.tarball }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      # Inputs and ref names reach the shell only through the environment, and
+      # the package folder is validated before it is used in a path.
+      - name: Resolve package and version
+        id: meta
+        shell: bash
+        env:
+          INPUT_PACKAGE: ${{ inputs.package }}
+        run: |
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            pkg="${GITHUB_REF_NAME%-v*}"
+            tag_version="${GITHUB_REF_NAME##*-v}"
+          else
+            pkg="$INPUT_PACKAGE"
+            tag_version=""
+          fi
+          [[ "$pkg" =~ ^[A-Za-z0-9._-]+$ ]] || { echo "package name '$pkg' has characters outside [A-Za-z0-9._-]" >&2; exit 1; }
+          manifest="packages/$pkg/package.json"
+          [[ -f "$manifest" ]] || { echo "no package at packages/$pkg" >&2; exit 1; }
+          version=$(node -p 'require(process.argv[1]).version' "./$manifest")
+          name=$(node -p 'require(process.argv[1]).name' "./$manifest")
+          if [[ -n "$tag_version" && "$tag_version" != "$version" ]]; then
+            echo "tag says $tag_version but $manifest says $version" >&2
+            exit 1
+          fi
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            git rev-parse --verify --quiet origin/main > /dev/null || { echo "origin/main is not available in this checkout, so the tag cannot be checked" >&2; exit 1; }
+            if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+              echo "tagged commit $GITHUB_SHA is not on main; releases are cut from main only" >&2
+              exit 1
+            fi
+          fi
+          {
+            echo "pkg=$pkg"
+            echo "name=$name"
+            echo "version=$version"
+            echo "dir=packages/$pkg"
+          } >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: ${{ steps.meta.outputs.dir }}/package-lock.json
+
+      - name: Install, lint, test
+        working-directory: ${{ steps.meta.outputs.dir }}
+        run: |
+          npm ci
+          npm run lint
+          npm test
+
+      - name: Pack
+        id: pack
+        working-directory: ${{ steps.meta.outputs.dir }}
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/pack"
+          file=$(npm pack --json --pack-destination "$RUNNER_TEMP/pack" | node -p 'JSON.parse(require("fs").readFileSync(0, "utf8"))[0].filename')
+          echo "tarball=$file" >> "$GITHUB_OUTPUT"
+          tar tzf "$RUNNER_TEMP/pack/$file"
+
+      # The same check CI runs on three platforms: the tarball has to work from
+      # a real node_modules directory, installed globally here since that is
+      # how a released CLI is used. Output goes to a file so a closed pipe
+      # cannot fail the step.
+      - name: Smoke-test a global install of the tarball
+        shell: bash
+        env:
+          PKG: ${{ steps.meta.outputs.pkg }}
+          TARBALL: ${{ steps.pack.outputs.tarball }}
+        run: |
+          npm i -g "$RUNNER_TEMP/pack/$TARBALL"
+          # `bin` is either a name-to-path map or a single path, in which case the command is the package name.
+          bin=$(node -p 'const p = require(process.argv[1]); typeof p.bin === "string" ? p.name.split("/").pop() : Object.keys(p.bin)[0]' "./packages/$PKG/package.json")
+          "$bin" --help > "$RUNNER_TEMP/help.txt"
+          head -3 "$RUNNER_TEMP/help.txt"
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: tarball
+          path: ${{ runner.temp }}/pack/${{ steps.pack.outputs.tarball }}
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    # A tag push publishes. A manual run publishes only with dry-run off and
+    # only from main, so a stray branch cannot reach the registry.
+    if: >-
+      github.event_name == 'push' ||
+      (inputs.dry-run == false && github.ref == 'refs/heads/main')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write   # create the GitHub Release
+      id-token: write   # npm provenance
+    steps:
+      # The checkout gives provenance its git metadata; nothing is installed from it.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: tarball
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+
+      # Trusted publishing needs npm 11.5.1 or newer. Node 24 bundles a newer
+      # one; this checks rather than installing an unpinned npm here.
+      - name: Check the bundled npm
+        run: |
+          have=$(npm --version)
+          if [[ "$(printf '%s\n' 11.5.1 "$have" | sort -V | head -1)" != 11.5.1 ]]; then
+            echo "npm $have is older than 11.5.1, which trusted publishing needs" >&2
+            exit 1
+          fi
+
+      - name: Publish to npm
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          TARBALL: ${{ needs.build.outputs.tarball }}
+        run: |
+          if [[ -n "$NPM_TOKEN" ]]; then
+            echo "//registry.npmjs.org/:_authToken=$NPM_TOKEN" > ~/.npmrc
+          else
+            echo "NPM_TOKEN is not set; relying on trusted publishing (OIDC)"
+          fi
+          npm publish "./$TARBALL" --provenance --access public
+
+      - name: GitHub Release with the tarball
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NAME: ${{ needs.build.outputs.name }}
+          VERSION: ${{ needs.build.outputs.version }}
+          DIR: ${{ needs.build.outputs.dir }}
+          TARBALL: ${{ needs.build.outputs.tarball }}
+        run: |
+          notes="Install on macOS, Windows or Linux with Node 22.18 or newer:
+
+          \`\`\`
+          npm i -g $NAME@$VERSION
+          \`\`\`
+
+          Or without the npm registry, from the attached tarball:
+
+          \`\`\`
+          npm i -g $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/download/$GITHUB_REF_NAME/$TARBALL
+          \`\`\`
+
+          See $DIR/README.md for usage."
+          gh release create "$GITHUB_REF_NAME" "./$TARBALL" --repo "$GITHUB_REPOSITORY" --title "$NAME $VERSION" --notes "$notes"

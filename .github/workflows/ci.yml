@@ -1,0 +1,113 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pptx-editable:
+    name: pptx-editable (${{ matrix.os }}, node ${{ matrix.node }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        node: [22, 24]
+    defaults:
+      run:
+        shell: bash
+        working-directory: packages/pptx-editable
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+          cache-dependency-path: packages/pptx-editable/package-lock.json
+
+      - name: Install (builds dist/ through prepare)
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Test
+        run: npm test
+
+      - name: Pack
+        run: |
+          mkdir -p ../../ci-deck
+          npm pack --json --pack-destination ../../ci-deck > /dev/null
+
+      # The tarball goes into a fresh deck the way a user would install it:
+      # a real node_modules directory, not a symlink, which is the case Node's
+      # type stripping refuses. The deck brings its own Slidev and Playwright.
+      - name: Install the tarball into a fresh deck
+        working-directory: ci-deck
+        run: |
+          npm init -y > /dev/null
+          npm i --no-audit --no-fund @slidev/cli @slidev/theme-default playwright-chromium ./slidev-export-pptx-editable-*.tgz
+          npx playwright install --with-deps chromium
+
+      - name: Export a deck
+        working-directory: ci-deck
+        env:
+          OS: ${{ matrix.os }}
+          NODE: ${{ matrix.node }}
+        run: |
+          cat > slides.md <<'MD'
+          ---
+          theme: default
+          title: CI deck
+          ---
+
+          # CI deck
+
+          Exported in CI.
+
+          ---
+
+          # A list and a code block
+
+          - one
+          - two <span v-click>three</span>
+
+          ```ts
+          const answer = 42
+          ```
+          MD
+          echo "$OS, node $NODE"
+          npx slidev-pptx-editable slides.md --output out/ci-deck.pptx --verbose
+          test -s out/ci-deck.pptx
+
+      # The repository root is itself installable straight from GitHub
+      # (`npm i -g github:stn1slv/slidev-extensions`): npm clones it, runs
+      # the root prepare script that builds dist/, and packs what `files`
+      # lists. This installs the commit under test the same way.
+      - name: Install from git without a clone
+        working-directory: ${{ runner.temp }}
+        env:
+          SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          REPO: ${{ github.repository }}
+        run: |
+          # Anonymous on purpose: this is what a user without credentials gets.
+          mkdir -p git-install && cd git-install
+          npm init -y > /dev/null
+          npm i --no-audit --no-fund "git+https://github.com/$REPO.git#$SHA"
+          npx slidev-pptx-editable --help > help.txt
+          head -3 help.txt
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ci-deck-${{ matrix.os }}-node${{ matrix.node }}
+          path: ci-deck/out/ci-deck.pptx
