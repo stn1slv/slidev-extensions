@@ -18,11 +18,14 @@
     "packages/pptx-editable/README.md",
     "packages/pptx-editable/UPSTREAM",
     "packages/pptx-editable/bin",
-    "packages/pptx-editable/dist",
-    "packages/pptx-editable/package.json"
+    "packages/pptx-editable/package.json",
+    "packages/pptx-editable/scripts/build.mjs",
+    "packages/pptx-editable/src",
+    "!packages/pptx-editable/src/**/*.test.ts"
   ],
+  "_comment": "postinstall rather than prepare: a prepare script makes npm run a nested install inside the git clone, and under `npm i -g` that nested install inherits global mode and installs a symlink to the temporary clone. postinstall runs once the package sits in its final place and needs only Node.",
   "scripts": {
-    "prepare": "node packages/pptx-editable/scripts/build.mjs"
+    "postinstall": "node packages/pptx-editable/scripts/build.mjs"
   },
   "engines": {
     "node": ">=22.18"
