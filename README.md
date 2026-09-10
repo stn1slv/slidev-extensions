@@ -12,13 +12,15 @@ This is a bridge, not a product. Once the upstream pull request ships as `slidev
 
 ## Installation
 
-One command on macOS, Windows or Linux with Node 22.18 or newer, no clone needed. npm clones the repository into its cache, builds `dist/` through the root `prepare` script, and installs the binary:
+One command on macOS, Windows or Linux with Node 22.18 or newer, no clone and no git needed. npm downloads GitHub's archive of `main`, installs it like any package, and builds `dist/` through the root `postinstall` script:
 
 ```bash
-npm i -g github:stn1slv/slidev-extensions
+npm i -g https://github.com/stn1slv/slidev-extensions/archive/refs/heads/main.tar.gz
 ```
 
-Append `#<tag or branch>` to pin a version, for example `#pptx-editable-v0.1.0`. Then, in the deck folder next to `slides.md`, the deck needs its own Slidev and a browser for Playwright:
+To pin a version, use a tag's archive instead: `https://github.com/stn1slv/slidev-extensions/archive/refs/tags/pptx-editable-v0.1.0.tar.gz`. The `github:stn1slv/slidev-extensions` shorthand works for a project-local install but not for `-g`: npm 11 installs a global git dependency as a symlink into a temporary clone that it then deletes.
+
+Then, in the deck folder next to `slides.md`, the deck needs its own Slidev and a browser for Playwright:
 
 ```bash
 cd <deck-folder>
