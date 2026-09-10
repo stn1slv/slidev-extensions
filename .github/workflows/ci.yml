@@ -99,7 +99,12 @@ jobs:
         env:
           SHA: ${{ github.event.pull_request.head.sha || github.sha }}
           REPO: ${{ github.repository }}
+          TOKEN: ${{ github.token }}
         run: |
+          # The repository is private, so npm's clone needs the job token;
+          # the rewrite lives in a throwaway global config for this step only.
+          export GIT_CONFIG_GLOBAL="$RUNNER_TEMP/gitconfig-npm"
+          git config --global "url.https://x-access-token:${TOKEN}@github.com/.insteadOf" "https://github.com/"
           mkdir -p git-install && cd git-install
           npm init -y > /dev/null
           npm i --no-audit --no-fund "git+https://github.com/$REPO.git#$SHA"
