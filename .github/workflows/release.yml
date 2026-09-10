@@ -1,0 +1,121 @@
+name: Release
+
+# Publishes one package to npm and attaches its tarball to a GitHub Release.
+#
+# Trigger by pushing a tag named <package>-v<version>, for example
+# `pptx-editable-v0.1.0`, whose version must equal the one in that package's
+# package.json. Installing afterwards is the same on every platform:
+#
+#   npm i -g slidev-export-pptx-editable
+#
+# Needs the repository secret NPM_TOKEN (an npm automation token with publish
+# rights) for `npm publish`. The GitHub Release uses the workflow's own token.
+
+on:
+  push:
+    tags: ['*-v*']
+  workflow_dispatch:
+    inputs:
+      package:
+        description: Folder under packages/ to publish
+        required: true
+        default: pptx-editable
+      dry-run:
+        description: Build and pack, but publish nothing
+        type: boolean
+        default: true
+
+permissions:
+  contents: write   # create the GitHub Release
+  id-token: write   # npm provenance
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve package and version
+        id: meta
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            pkg="${GITHUB_REF_NAME%-v*}"
+            tag_version="${GITHUB_REF_NAME##*-v}"
+          else
+            pkg="${{ inputs.package }}"
+            tag_version=""
+          fi
+          [[ -f "packages/$pkg/package.json" ]] || { echo "no package at packages/$pkg" >&2; exit 1; }
+          version=$(node -p "require('./packages/$pkg/package.json').version")
+          name=$(node -p "require('./packages/$pkg/package.json').name")
+          if [[ -n "$tag_version" && "$tag_version" != "$version" ]]; then
+            echo "tag says $tag_version but packages/$pkg/package.json says $version" >&2
+            exit 1
+          fi
+          {
+            echo "pkg=$pkg"
+            echo "name=$name"
+            echo "version=$version"
+            echo "dir=packages/$pkg"
+          } >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+          cache: npm
+          cache-dependency-path: ${{ steps.meta.outputs.dir }}/package-lock.json
+
+      - name: Install, lint, test
+        working-directory: ${{ steps.meta.outputs.dir }}
+        run: |
+          npm ci
+          npm run lint
+          npm test
+
+      - name: Pack
+        id: pack
+        working-directory: ${{ steps.meta.outputs.dir }}
+        shell: bash
+        run: |
+          file=$(npm pack --pack-destination "$RUNNER_TEMP" | tail -1)
+          echo "file=$RUNNER_TEMP/$file" >> "$GITHUB_OUTPUT"
+          tar tzf "$RUNNER_TEMP/$file"
+
+      # The same check CI runs on three platforms: the tarball has to work from
+      # a real node_modules directory, installed globally here since that is
+      # how a released CLI is used.
+      - name: Smoke-test a global install of the tarball
+        shell: bash
+        run: |
+          npm i -g "${{ steps.pack.outputs.file }}"
+          slidev-pptx-editable --help | head -3
+
+      - name: Publish to npm
+        if: github.event_name == 'push' || inputs.dry-run == false
+        working-directory: ${{ steps.meta.outputs.dir }}
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --provenance --access public
+
+      - name: GitHub Release with the tarball
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" "${{ steps.pack.outputs.file }}" \
+            --title "${{ steps.meta.outputs.name }} ${{ steps.meta.outputs.version }}" \
+            --notes "Install on macOS, Windows or Linux with Node 22.18 or newer:
+
+          \`\`\`
+          npm i -g ${{ steps.meta.outputs.name }}@${{ steps.meta.outputs.version }}
+          \`\`\`
+
+          Or without the npm registry, from the attached tarball:
+
+          \`\`\`
+          npm i -g ${{ github.server_url }}/${{ github.repository }}/releases/download/$GITHUB_REF_NAME/$(basename "${{ steps.pack.outputs.file }}")
+          \`\`\`
+
+          See ${{ steps.meta.outputs.dir }}/README.md for usage."
